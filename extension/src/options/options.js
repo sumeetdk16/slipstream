@@ -77,13 +77,6 @@
     renderPlatforms();
     renderShortcuts().catch(() => {});
 
-    const settings = await send('GET_SETTINGS');
-    $('apiKey').value = settings.groqApiKey || '';
-    $('model').value = settings.model;
-    ['widgetEnabled', 'autoCapture', 'limitAlerts', 'autoFillTarget'].forEach((id) =>
-      bindToggle(id, settings)
-    );
-
     const keyStatus = $('key-status');
 
     $('reveal').addEventListener('click', () => {
@@ -93,13 +86,29 @@
       $('reveal').textContent = hidden ? 'Hide' : 'Show';
     });
 
+    // Both buttons are latched while their request is in flight: a Groq call
+    // can take the full 25s timeout, and an un-latched button just invites the
+    // user to stack five more of them on top of the one they are waiting for.
+    function latch(button, label) {
+      const original = button.textContent;
+      button.disabled = true;
+      button.textContent = label;
+      return () => {
+        button.disabled = false;
+        button.textContent = original;
+      };
+    }
+
     $('save').addEventListener('click', async () => {
+      const release = latch($('save'), 'Saving…');
       const patch = { groqApiKey: $('apiKey').value.trim(), model: $('model').value };
       try {
         await send('SET_SETTINGS', { patch });
         status(keyStatus, patch.groqApiKey ? 'Key saved.' : 'Saved. Running without a key.', 'ok');
       } catch (err) {
         status(keyStatus, err.message, 'err');
+      } finally {
+        release();
       }
     });
 
@@ -110,6 +119,13 @@
     $('verify').addEventListener('click', async () => {
       const apiKey = $('apiKey').value.trim();
       if (!apiKey) return status(keyStatus, 'Enter a key first.', 'err');
+      if (!/^gsk_/.test(apiKey)) {
+        // The commonest mistake this field sees: an xAI *Grok* key pasted into
+        // the *Groq* field. Say so before spending 25s on a certain 401.
+        status(keyStatus, 'That does not look like a Groq key — they start with gsk_ and come from console.groq.com. An xAI (Grok) key will not work here.', 'err');
+        return;
+      }
+      const release = latch($('verify'), 'Testing…');
       status(keyStatus, 'Testing…');
       try {
         await send('VERIFY_KEY', { apiKey });
@@ -117,6 +133,8 @@
         status(keyStatus, 'Connected. Key saved.', 'ok');
       } catch (err) {
         status(keyStatus, err.message, 'err');
+      } finally {
+        release();
       }
     });
 
@@ -142,6 +160,19 @@
       await refreshCount();
       status(dataStatus, 'All saved threads deleted.', 'ok');
     });
+
+    // Loaded last and defensively: a settings read that fails must leave the
+    // page usable, not strand it with none of the controls above wired up.
+    try {
+      const settings = await send('GET_SETTINGS');
+      $('apiKey').value = settings.groqApiKey || '';
+      $('model').value = settings.model;
+      ['widgetEnabled', 'autoCapture', 'limitAlerts', 'autoFillTarget'].forEach((id) =>
+        bindToggle(id, settings)
+      );
+    } catch (err) {
+      status(keyStatus, err.message, 'err');
+    }
 
     await refreshCount();
   }

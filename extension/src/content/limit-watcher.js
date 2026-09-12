@@ -22,6 +22,13 @@
   ].join(', ');
 
   const SCAN_INTERVAL_MS = 2500;
+  /**
+   * A scan reads innerText off live nodes, which forces layout. On a page that
+   * is not changing near any candidate region, repeating that every 2.5s for
+   * as long as the tab is open is pure heat, so consecutive identical scans
+   * back the interval off to this multiple of it.
+   */
+  const MAX_IDLE_BACKOFF = 8;
   const MAX_REGION_CHARS = 600;
 
   function composerRegion() {
@@ -52,10 +59,14 @@
     let lastScan = 0;
     let timer = null;
     let observer = null;
+    let lastHaystack = null;
+    let idleRounds = 0;
 
     function evaluate() {
       lastScan = Date.now();
       const haystack = scanText();
+      idleRounds = haystack === lastHaystack ? Math.min(MAX_IDLE_BACKOFF, idleRounds + 1) : 0;
+      lastHaystack = haystack;
       const hit = patterns.find((p) => haystack.includes(p));
 
       if (hit && !active) {
@@ -69,17 +80,31 @@
 
     function schedule() {
       if (timer) return;
-      const wait = Math.max(0, SCAN_INTERVAL_MS - (Date.now() - lastScan));
+      const interval = SCAN_INTERVAL_MS * (1 + idleRounds);
+      const wait = Math.max(0, interval - (Date.now() - lastScan));
       timer = setTimeout(() => {
         timer = null;
+        // A background tab cannot be showing the user a limit notice; scanning
+        // one only costs layout. Re-arm and look when it comes back.
+        if (document.hidden) return schedule();
         evaluate();
       }, wait);
     }
 
     function start() {
       if (observer) return;
-      observer = new MutationObserver(schedule);
+      observer = new MutationObserver(() => {
+        if (document.hidden) return;
+        schedule();
+      });
       observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+          // Coming back to the tab is the one moment worth a prompt look.
+          idleRounds = 0;
+          schedule();
+        }
+      });
       schedule();
     }
 

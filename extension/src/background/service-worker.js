@@ -47,18 +47,33 @@ function publicSettings(settings) {
 }
 
 /**
- * A message from a tab is a content script; one without a tab is an extension
- * page (popup or options). Only the latter is privileged — it is the only
- * surface where the user themselves is typing.
+ * Our own pages, identified by origin rather than by the absence of a tab:
+ * options_ui runs with open_in_tab, so Chrome hands the options page a
+ * sender.tab exactly like a content script. Reading privilege off `!sender.tab`
+ * locked the options page out of its own settings.
  */
-function isPrivilegedSender(sender) {
-  return !sender?.tab;
+const EXTENSION_ORIGIN = chrome.runtime.getURL('').replace(/\/+$/, '');
+
+function isExtensionPage(sender) {
+  return typeof sender?.url === 'string' && sender.url.startsWith(EXTENSION_ORIGIN + '/');
 }
 
-/** Rejects anything that is not this extension talking from a supported page. */
+/**
+ * Only the popup and the options page are privileged — they are the only
+ * surfaces where the user themselves is typing.
+ */
+function isPrivilegedSender(sender) {
+  if (sender?.id !== chrome.runtime.id) return false;
+  if (isExtensionPage(sender)) return true;
+  // Older Chromes omit sender.url for the popup; nothing in a tab reaches here.
+  return !sender?.tab && !sender?.url;
+}
+
+/** Rejects anything that is not this extension talking from a surface we own. */
 function isTrustedSender(sender) {
   if (sender?.id !== chrome.runtime.id) return false;
-  if (!sender.tab) return true;
+  if (isPrivilegedSender(sender)) return true;
+  if (!sender.tab) return false;
   return !!slipstreamPlatformForUrl(sender.tab.url);
 }
 

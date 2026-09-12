@@ -19,10 +19,19 @@
 
   const AUTO_CAPTURE_DEBOUNCE_MS = 4000;
   const COMPOSER_WAIT_MS = 20000;
+  /**
+   * Extraction walks and clones every message in the thread, so an automatic
+   * capture is never cheap. These pages mutate constantly even when nobody is
+   * typing (carets, virtualised lists, polling), so without a floor the
+   * debounce alone would re-extract a long thread every few seconds forever.
+   */
+  const MIN_AUTO_CAPTURE_GAP_MS = 10000;
+  const WIDGET_HOST_ID = 'slipstream-root';
 
   let widget = null;
   let watcher = null;
   let lastSignature = '';
+  let lastAutoCaptureAt = 0;
   let settings = { widgetEnabled: true, autoCapture: true, limitAlerts: true };
 
   /* ------------------------------------------------------------ messaging */
@@ -48,6 +57,11 @@
   }
 
   async function captureNow({ manual = false } = {}) {
+    if (!manual) {
+      if (document.hidden) return null;
+      if (Date.now() - lastAutoCaptureAt < MIN_AUTO_CAPTURE_GAP_MS) return null;
+      lastAutoCaptureAt = Date.now();
+    }
     const capture = SlipstreamAdapters.capture();
     if (!capture) return null;
 
@@ -172,9 +186,15 @@
 
   let captureTimer = null;
   function scheduleCapture() {
-    if (!settings.autoCapture) return;
+    if (!settings.autoCapture || document.hidden) return;
     clearTimeout(captureTimer);
     captureTimer = setTimeout(() => captureNow().catch(() => {}), AUTO_CAPTURE_DEBOUNCE_MS);
+  }
+
+  /** True for mutations the widget itself caused — never worth re-capturing. */
+  function isOurOwnMutation(node) {
+    const host = document.getElementById(WIDGET_HOST_ID);
+    return !!host && (node === host || host.contains(node));
   }
 
   function watchThreadChanges() {
@@ -198,9 +218,23 @@
     }
     window.addEventListener('popstate', onNavigate);
 
-    const observer = new MutationObserver(scheduleCapture);
+    const observer = new MutationObserver((records) => {
+      // A hidden tab is not producing new conversation, and re-arming the
+      // debounce on every record of a background page is most of what made a
+      // pile of open chat tabs sit on the CPU.
+      if (document.hidden) return;
+      for (const record of records) {
+        if (!isOurOwnMutation(record.target)) return scheduleCapture();
+      }
+    });
     const target = document.querySelector('main') || document.body;
     observer.observe(target, { childList: true, subtree: true });
+
+    // Whatever happened while the tab was in the background is picked up once,
+    // when the user comes back to it.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) scheduleCapture();
+    });
   }
 
   async function mountWidget() {
