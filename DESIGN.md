@@ -174,7 +174,12 @@ steps right, and the departure arrow; both report thread length on the same gaug
 
 ## Bans specific to this world
 
-No gradients, no glow, no glass. No second accent, and no hue at all in the chrome — if something
+No gradients, no glow, and no glass **in the product** — the popup, the widget and the settings
+page are flat surfaces with hairline edges, and nothing there is allowed to become a material. The
+landing page is the one exception, and it is deliberate: its nav and its panels are refracted glass
+(`web/liquid-glass.js`), lit white at single-digit alpha over a 3%-white hairline field, because a
+marketing page has a surface to sell and the product has work to do. The exception stops at the
+extension boundary. No second accent, and no hue at all in the chrome — if something
 needs to stand out, it stands out by being white, by being larger, or by being the only thing
 moving. No rounded line caps on diagram strokes (`butt` and `square` only). No unicode glyph used as an icon — interface icons are drawn SVG, 2px stroke, square caps, mitred
 joins, and the assistants' marks come from the icon set, never hand-traced. No card grid where a line would say it better.

@@ -97,7 +97,14 @@
 
   body {
     margin: 0;
-    background: var(--black);
+    /* The ground stays black. What sits on it is a fixed hairline field at
+       ~3% white — the grid the diagrams are already drawn against, dropped
+       far enough to read as texture. Glass bends what is behind it, and on a
+       flat black page there is nothing to bend. */
+    background:
+      repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.032) 0 1px, transparent 1px 46px) fixed,
+      repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 46px) fixed,
+      var(--black);
     color: var(--text);
     font-family: var(--ui);
     font-size: var(--t-body);
@@ -125,10 +132,44 @@
     position: sticky;
     top: 0;
     z-index: 20;
-    background: rgba(0, 0, 0, 0.82);
-    backdrop-filter: blur(8px);
     border-bottom: 1px solid var(--hair);
   }
+  /* ------------------------------------------------------------- glass */
+  /* liquid-glass.js owns the refraction (backdrop-filter: url(#…), set
+     inline). Everything that makes it read as a material — the tint it is
+     lit through, the specular top edge, the rim, the shadow it casts — is
+     here, and stays monochrome: the light is white, at single-digit alpha. */
+  .glass {
+    position: relative;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.022) 46%, rgba(255, 255, 255, 0.05)),
+      rgba(11, 11, 11, 0.5);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.055),
+      inset 0 -1px 0 rgba(255, 255, 255, 0.05),
+      0 16px 40px rgba(0, 0, 0, 0.55);
+    border: 0;
+  }
+  /* Where refraction is unavailable the module frosts instead, and the panel
+     leans on a denser ground so the type keeps its contrast. */
+  .glass.lg-fallback { background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)), rgba(11, 11, 11, 0.72); }
+
+  .nav.glass { background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.015)), rgba(0, 0, 0, 0.42); box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.06); }
+  .nav.glass.lg-fallback { background: rgba(0, 0, 0, 0.78); }
+
+  /* The panels that become glass give up their opaque fills to it. */
+  .diagram.glass, .os.glass { border: 0; }
+  .slab.glass { background-color: rgba(11, 11, 11, 0.42); }
+  .slab.glass .cap { background: rgba(255, 255, 255, 0.055); }
+  .pair .box.glass { background-color: rgba(11, 11, 11, 0.42); }
+  .pair .box.after.glass { background-color: rgba(255, 255, 255, 0.05); }
+
+  @media (prefers-reduced-transparency: reduce) {
+    .glass { background: var(--surface); box-shadow: none; border: 1px solid var(--hair); backdrop-filter: none !important; }
+    .nav.glass { background: rgba(0, 0, 0, 0.94); }
+  }
+
   .nav-inner { display: flex; align-items: center; gap: 16px; height: 60px; }
   .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
   .brand svg { width: 24px; height: 24px; display: block; }
@@ -997,3 +1038,29 @@
     </footer>
   </div>
 </main>
+
+<script src="liquid-glass.js"></script>
+<script>
+  /* The glass is progressive: the class that thins these panels out is only
+     added once the module is here to put something behind them. Without JS
+     the page is the solid instrument panel it has always been. */
+  (function () {
+    if (typeof liquidGlass !== 'function') return;
+
+    var nav = document.querySelector('.nav');
+    if (nav) {
+      nav.classList.add('glass');
+      // A sticky bar repaints on every scrolled frame, so it takes the
+      // quietest setting in the set: a shallow bulge and almost no fringe.
+      liquidGlass(nav, { scale: -58, chroma: 3, blur: 7, saturate: 1, radius: 0, fallbackBlur: 12 });
+    }
+
+    var panels = document.querySelectorAll('.diagram, .slab, .os, .pair .box');
+    Array.prototype.forEach.call(panels, function (el) {
+      el.classList.add('glass');
+      // saturate stays at 1: the only colour behind any of these is an
+      // assistant's own mark, and the chrome does not get to boost it.
+      liquidGlass(el, { scale: -108, chroma: 5, blur: 6, saturate: 1, fallbackBlur: 14 });
+    });
+  })();
+</script>
